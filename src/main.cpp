@@ -290,14 +290,15 @@ void loopQuiz() {
   winnerSent = true;
   
   if (leftSwitchStatus == HIGH) {
-    quizSwitchLED(LEFT_BUTTON_LIGHT, HIGH);
-    sendMQTTMessage(MQTT_TOPIC_QUIZ, "L", false);
+    winner = LEFT_BUTTON_LIGHT;
+  } else if (rightSwitchStatus == HIGH) {
+    winner = RIGHT_BUTTON_LIGHT;
+  } else {
+    logError("INVALID_WINNER");
   }
-  
-  if (rightSwitchStatus == HIGH) {
-    quizSwitchLED(RIGHT_BUTTON_LIGHT, HIGH);
-    sendMQTTMessage(MQTT_TOPIC_QUIZ, "R", false);
-  }
+
+  quizSwitchLED(winner, HIGH);
+  sendMQTTMessage(MQTT_TOPIC_QUIZ, winner == LEFT_BUTTON_LIGHT ? "L" : "R", false);
 }
 
 void handleQuiz(DynamicJsonDocument json) {
