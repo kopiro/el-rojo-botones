@@ -281,14 +281,10 @@ void loopQuiz() {
   }
   
   if (digitalRead(LEFT_BUTTON_SWITCH) == HIGH) {
-    Serial.write("LEFT_BUTTON_SWITCH");
-    Serial.write("\n");
     winner = LEFT_BUTTON_LIGHT;
   }
 
   if (digitalRead(RIGHT_BUTTON_SWITCH) == HIGH) {
-    Serial.write("RIGHT_BUTTON_SWITCH");
-    Serial.write("\n");
     winner = RIGHT_BUTTON_LIGHT;
   }
 
