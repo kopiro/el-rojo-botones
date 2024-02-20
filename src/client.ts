@@ -9,19 +9,13 @@ const client = mqtt.connect({
 client.on("connect", () => {
     console.log("Connected to MQTT broker");
     // Perform any actions after successful connection
-
-    client.subscribe("elrojobotones/availability", function (err) {
-        console.log("READY");
-    });
-
-    client.subscribe("elrojobotones/quiz", function (err) {
-        console.log("READY");
-    });
+    client.subscribe("elrojobotones/quiz");
 });
 
 client.on("message", (topic, message) => {
     console.log(`Received message on topic: ${topic}`);
     console.log(`Message: ${message.toString()}`);
+
     // Handle the received message
     if (topic === "elrojobotones/quiz") {
         alert(message);
@@ -30,17 +24,26 @@ client.on("message", (topic, message) => {
 
 client.on("error", error => {
     console.error("Error occurred:", error);
-    // Handle the error
 });
 
-document.querySelector("#test").addEventListener("click", () => {
-    const z = client.publish(
+document.querySelector("#reset").addEventListener("click", () => {
+    client.publish(
         "elrojobotones/callback",
         JSON.stringify({
             command: "quiz",
+            method: "reset",
         }),
     );
-    console.log(z);
+});
+
+document.querySelector("#animate").addEventListener("click", () => {
+    client.publish(
+        "elrojobotones/callback",
+        JSON.stringify({
+            command: "quiz",
+            method: "animate",
+        }),
+    );
 });
 
 // Disconnect from the MQTT broker

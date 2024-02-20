@@ -295,6 +295,7 @@ void loopQuiz() {
     winner = RIGHT_BUTTON_LIGHT;
   } else {
     logError("INVALID_WINNER");
+    return;
   }
 
   quizSwitchLED(winner, HIGH);
