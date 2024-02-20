@@ -279,19 +279,24 @@ void loopQuiz() {
   if (winnerSent) {
     return;
   }
+
+  int leftSwitchStatus = digitalRead(LEFT_BUTTON_SWITCH);
+  int rightSwitchStatus = digitalRead(RIGHT_BUTTON_SWITCH);
+
+  if (leftSwitchStatus == LOW && rightSwitchStatus == LOW) {
+    return;
+  }
+
+  winnerSent = true;
   
-  if (digitalRead(LEFT_BUTTON_SWITCH) == HIGH) {
-    winner = LEFT_BUTTON_LIGHT;
+  if (leftSwitchStatus == HIGH) {
+    quizSwitchLED(LEFT_BUTTON_LIGHT, HIGH);
+    sendMQTTMessage(MQTT_TOPIC_QUIZ, "L", false);
   }
-
-  if (digitalRead(RIGHT_BUTTON_SWITCH) == HIGH) {
-    winner = RIGHT_BUTTON_LIGHT;
-  }
-
-  if (winner > 0) {
-    winnerSent = true;
-    digitalWrite(winner, HIGH);
-    sendMQTTMessage(MQTT_TOPIC_QUIZ, winner == LEFT_BUTTON_LIGHT ? "left" : "right", false);
+  
+  if (rightSwitchStatus == HIGH) {
+    quizSwitchLED(RIGHT_BUTTON_LIGHT, HIGH);
+    sendMQTTMessage(MQTT_TOPIC_QUIZ, "R", false);
   }
 }
 
@@ -304,7 +309,7 @@ void handleQuiz(DynamicJsonDocument json) {
   }
 
   if (method == "animation") {
-    int delayTime = json["delayTime"].as<int>();
+    int delayTime = json["delay"].as<int>();
     if (!delayTime) {
       delayTime = 100;
     }
