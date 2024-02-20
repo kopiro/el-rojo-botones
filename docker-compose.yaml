@@ -1,0 +1,19 @@
+version: "3.9"
+
+networks:
+  proxy:
+    external: true
+  internal:
+
+services:
+  app:
+    image: ghcr.io/kopiro/rojo-button-quiz:latest
+    networks:
+      - proxy
+      - internal
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - VIRTUAL_HOST=rojo-button-quiz.kopiro.me
+    ports:
+      - 1337:1337
