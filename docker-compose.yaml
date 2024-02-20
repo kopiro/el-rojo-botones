@@ -7,13 +7,13 @@ networks:
 
 services:
   app:
-    image: ghcr.io/kopiro/rojo-button-quiz:latest
+    image: ghcr.io/kopiro/el-rojo-botones:latest
     networks:
       - proxy
       - internal
     restart: unless-stopped
     env_file: .env
     environment:
-      - VIRTUAL_HOST=rojo-button-quiz.kopiro.me
+      - VIRTUAL_HOST=el-rojo-botones.kopiro.me
     ports:
       - 1337:1337
