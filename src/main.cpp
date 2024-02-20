@@ -6,29 +6,9 @@
 #include <PubSubClient.h>
 #include <WiFiManager.h>
 
-#ifndef BOARD_ID
-#define BOARD_ID "esp8266"
-#endif
-
-#ifndef MQTT_SERVER
-#define MQTT_SERVER ""
-#endif
-
-#ifndef MQTT_USERNAME
-#define MQTT_USERNAME ""
-#endif
-
-#ifndef MQTT_PASSWORD
-#define MQTT_PASSWORD ""
-#endif
-
-#ifndef MQTT_POLLING_TIMEOUT
-#define MQTT_POLLING_TIMEOUT 60000
-#endif
-
-char mqtt_server[64] = MQTT_SERVER;
-char mqtt_username[64] = MQTT_USERNAME;
-char mqtt_password[64] = MQTT_PASSWORD;
+char mqtt_server[64] = "";
+char mqtt_username[64] = "";
+char mqtt_password[64] = "";
 
 #define AVAILABILITY_ONLINE "online"
 #define AVAILABILITY_OFFLINE "offline"
@@ -127,9 +107,8 @@ void loadConfig() {
 }
 
 void setupGeneric() {
-  Serial.begin(9600);
+  Serial.begin(115200);
   while (!Serial) {
-
     ; // wait for serial port to connect. Needed for native USB port only
   }
 
@@ -145,13 +124,6 @@ void setupGeneric() {
   snprintf(MQTT_TOPIC_DEBUG, 80, "%s/debug", BOARD_ID);
 
   snprintf(MQTT_TOPIC_QUIZ, 80, "%s/quiz", BOARD_ID);
-}
-
-void handleDeepSleep(DynamicJsonDocument json) {
-  uint64_t seconds = json["seconds"].as<uint64_t>();
-  Serial.printf("Deep sleep for %lld seconds...\n", seconds);
-
-  ESP.deepSleep(seconds * 1000000);
 }
 
 void handleRestart(DynamicJsonDocument json) {
@@ -170,24 +142,6 @@ void setupWifi() {
 
   WiFi.hostname(BOARD_ID);
 
-#ifdef WIFI_SSID
-#ifdef WIFI_PASSWORD
-  Serial.printf("Connecting to WiFi (protected): %s : %s\n", WIFI_SSID,
-                WIFI_PASSWORD);
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-#else
-  Serial.printf("Connecting to WiFi: %s\n", WIFI_SSID);
-  WiFi.begin(WIFI_SSID);
-#endif
-
-  for (int retries = 0;
-       retries < WIFI_MAX_TRIES && WiFi.status() != WL_CONNECTED; retries++) {
-    Serial.printf("WiFi check (%d of %d)...\n", retries + 1, WIFI_MAX_TRIES);
-    delay(1000);
-  }
-
-#endif
-
   wifiManager.setConfigPortalBlocking(false);
   wifiManager.setDebugOutput(true);
   wifiManager.setSaveParamsCallback(saveConfig);
@@ -203,7 +157,9 @@ void setupWifi() {
   }
 }
 
-void loopWifi() { wifiManager.process(); }
+void loopWifi() { 
+  wifiManager.process(); 
+}
 
 void mqttConnect() {
   Serial.printf("Connecting to MQTT server: %s (%s : %s)... ", mqtt_server,
@@ -246,20 +202,83 @@ void setupOTA() {
   ArduinoOTA.begin();
 }
 
-void loopOTA() { ArduinoOTA.handle(); }
+void loopOTA() { 
+  ArduinoOTA.handle(); 
+}
 
-void setupMDNS() { MDNS.begin(BOARD_ID); }
+void setupMDNS() { 
+  MDNS.begin(BOARD_ID); 
+}
 
-void loopMDNS() { MDNS.update(); }
+void loopMDNS() { 
+  MDNS.update(); 
+}
 
-void setupQuiz() {}
+#define LEFT_BUTTON_SWITCH 5
+#define RIGHT_BUTTON_SWITCH 4
 
-void loopQuiz() {}
+#define LEFT_BUTTON_LIGHT 14
+#define RIGHT_BUTTON_LIGHT 16
+
+int winner = 0;
+bool winnerSent = false;
+
+void resetQuiz() {
+  digitalWrite(LEFT_BUTTON_LIGHT, LOW);
+  digitalWrite(RIGHT_BUTTON_LIGHT, LOW);
+  winner = 0;
+  winnerSent = false;
+}
+
+void initialAnimationQuiz() {
+  for (int i = 0; i < 25; i++) {
+    digitalWrite(LEFT_BUTTON_LIGHT, i%2 == 0 ? HIGH : LOW);
+    digitalWrite(RIGHT_BUTTON_LIGHT, i%2 == 0 ? HIGH : LOW);
+    delay(100);
+  }
+}
+
+void setupQuiz() {
+  pinMode(LEFT_BUTTON_SWITCH, INPUT);
+  pinMode(RIGHT_BUTTON_SWITCH, INPUT);
+
+  pinMode(LEFT_BUTTON_LIGHT, OUTPUT);
+  pinMode(RIGHT_BUTTON_LIGHT, OUTPUT);
+
+  initialAnimationQuiz();
+  resetQuiz();
+}
+
+void loopQuiz() {
+  if (winnerSent) {
+    return;
+  }
+  
+  if (digitalRead(LEFT_BUTTON_SWITCH) == HIGH) {
+    Serial.write("LEFT_BUTTON_SWITCH");
+    Serial.write("\n");
+    winner = LEFT_BUTTON_LIGHT;
+  }
+
+  if (digitalRead(RIGHT_BUTTON_SWITCH) == HIGH) {
+    Serial.write("RIGHT_BUTTON_SWITCH");
+    Serial.write("\n");
+    winner = RIGHT_BUTTON_LIGHT;
+  }
+
+  if (winner > 0) {
+    winnerSent = true;
+    digitalWrite(winner, HIGH);
+    sendMQTTMessage(MQTT_TOPIC_QUIZ, winner == LEFT_BUTTON_LIGHT ? "left" : "right", false);
+  }
+}
 
 void handleQuiz(DynamicJsonDocument json) {
-  for (int i = 0; i < 10; i++) {
-    digitalWrite(LED_BUILTIN, i%2 == 0 ? HIGH : LOW);
-    delay(400);
+  String method = json["method"].as<String>();
+
+  if (method == "reset") {
+    resetQuiz();
+    return;
   }
 }
 
@@ -283,11 +302,6 @@ void mqttCallback(char *topic, byte *payload, unsigned int length) {
 
   if (command == "availability") {
     sendMQTTMessage(MQTT_TOPIC_AVAILABILITY, AVAILABILITY_ONLINE, true);
-    return;
-  }
-
-  if (command == "deepsleep") {
-    handleDeepSleep(commandJson);
     return;
   }
 
@@ -320,20 +334,17 @@ void setupMQTT() {
 
 void setup() {
   setupGeneric();
-
+  setupQuiz();
   setupWifi();
   setupMDNS();
   setupOTA();
   setupMQTT();
-
-  setupQuiz();
 }
 
 void loop() {
+  loopQuiz();
   loopWifi();
   loopMDNS();
   loopOTA();
   loopMQTT();
-
-  loopQuiz();
 }
