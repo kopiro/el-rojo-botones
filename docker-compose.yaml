@@ -16,4 +16,4 @@ services:
     environment:
       - VIRTUAL_HOST=el-rojo-botones.kopiro.me
     ports:
-      - 1337:1337
+      - 1884:1884
