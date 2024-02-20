@@ -176,6 +176,17 @@ void mqttConnect() {
   }
 }
 
+void setupMQTT() {
+  mqttClient.setClient(wifiClient);
+
+  mqttClient.setServer(mqtt_server, 1883);
+  mqttClient.setKeepAlive(10);
+  mqttClient.setBufferSize(2048);
+  mqttClient.setCallback(mqttCallback);
+
+  mqttConnect();
+}
+
 void loopMQTT() {
   if (mqttClient.connected()) {
     mqttClient.loop();
@@ -220,22 +231,37 @@ void loopMDNS() {
 #define LEFT_BUTTON_LIGHT 14
 #define RIGHT_BUTTON_LIGHT 16
 
-int winner = 0;
+unsigned short leftLEDStatus = 0;
+unsigned short rightLEDStatus = 0;
+
+unsigned short winner = 0;
 bool winnerSent = false;
 
-void resetQuiz() {
-  digitalWrite(LEFT_BUTTON_LIGHT, LOW);
-  digitalWrite(RIGHT_BUTTON_LIGHT, LOW);
+void quizSwitchLED(int pin, int value) {
+  if (pin == LEFT_BUTTON_LIGHT) {
+    leftLEDStatus = value;
+  } else {
+    rightLEDStatus = value;
+  }
+  digitalWrite(pin, value);
+}
+
+void quizReset() {
+  quizSwitchLED(LEFT_BUTTON_LIGHT, LOW);
+  quizSwitchLED(RIGHT_BUTTON_LIGHT, LOW);
   winner = 0;
   winnerSent = false;
 }
 
-void initialAnimationQuiz() {
+void quizAnimation(int delayTime) {
   for (int i = 0; i < 25; i++) {
     digitalWrite(LEFT_BUTTON_LIGHT, i%2 == 0 ? HIGH : LOW);
     digitalWrite(RIGHT_BUTTON_LIGHT, i%2 == 0 ? HIGH : LOW);
-    delay(100);
+    delay(delayTime);
   }
+  // Restore initial state
+  digitalWrite(LEFT_BUTTON_LIGHT, leftLEDStatus);
+  digitalWrite(RIGHT_BUTTON_LIGHT, rightLEDStatus);
 }
 
 void setupQuiz() {
@@ -245,8 +271,8 @@ void setupQuiz() {
   pinMode(LEFT_BUTTON_LIGHT, OUTPUT);
   pinMode(RIGHT_BUTTON_LIGHT, OUTPUT);
 
-  initialAnimationQuiz();
-  resetQuiz();
+  quizAnimation(100);
+  quizReset();
 }
 
 void loopQuiz() {
@@ -277,9 +303,20 @@ void handleQuiz(DynamicJsonDocument json) {
   String method = json["method"].as<String>();
 
   if (method == "reset") {
-    resetQuiz();
+    quizReset();
     return;
   }
+
+  if (method == "animation") {
+    int delayTime = json["delayTime"].as<int>();
+    if (!delayTime) {
+      delayTime = 100;
+    }
+    quizAnimation(delayTime);
+    return;
+  }
+
+  logError("INVALID_QUIZ_METHOD");
 }
 
 void mqttCallback(char *topic, byte *payload, unsigned int length) {
@@ -319,18 +356,6 @@ void mqttCallback(char *topic, byte *payload, unsigned int length) {
   logError("MQTT_INVALID_COMMAND");
 }
 
-// -------------------
-
-void setupMQTT() {
-  mqttClient.setClient(wifiClient);
-
-  mqttClient.setServer(mqtt_server, 1883);
-  mqttClient.setKeepAlive(10);
-  mqttClient.setBufferSize(2048);
-  mqttClient.setCallback(mqttCallback);
-
-  mqttConnect();
-}
 
 void setup() {
   setupGeneric();
