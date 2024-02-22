@@ -5,6 +5,7 @@
 #include <ESP8266mDNS.h>
 #include <PubSubClient.h>
 #include <WiFiManager.h>
+#include <ezButton.h>
 
 char mqtt_server[64] = "";
 char mqtt_username[64] = "";
@@ -19,6 +20,7 @@ char MQTT_TOPIC_CALLBACK[80];
 char MQTT_TOPIC_DEBUG[80];
 
 char MQTT_TOPIC_QUIZ[80];
+char MQTT_TOPIC_PRESS[80];
 
 WiFiManager wifiManager;
 WiFiClient wifiClient;
@@ -52,11 +54,14 @@ void logError(const char *msg) {
   sendMQTTMessage(MQTT_TOPIC_DEBUG, msg, false);
 }
 
-#define LEFT_BUTTON_SWITCH 5
-#define RIGHT_BUTTON_SWITCH 4
+#define LEFT_SWITCH 5
+#define RIGHT_SWITCH 4
 
-#define LEFT_BUTTON_LIGHT 14
-#define RIGHT_BUTTON_LIGHT 16
+ezButton leftSwitch(LEFT_SWITCH);
+ezButton rightSwitch(RIGHT_SWITCH);
+
+#define LEFT_LIGHT 14
+#define RIGHT_LIGHT 16
 
 unsigned short leftLEDStatus = 0;
 unsigned short rightLEDStatus = 0;
@@ -65,7 +70,7 @@ unsigned short winner = 0;
 bool winnerSent = false;
 
 void quizSwitchLED(int pin, int value) {
-  if (pin == LEFT_BUTTON_LIGHT) {
+  if (pin == LEFT_LIGHT) {
     leftLEDStatus = value;
   } else {
     rightLEDStatus = value;
@@ -74,61 +79,63 @@ void quizSwitchLED(int pin, int value) {
 }
 
 void quizReset() {
-  quizSwitchLED(LEFT_BUTTON_LIGHT, LOW);
-  quizSwitchLED(RIGHT_BUTTON_LIGHT, LOW);
   winner = 0;
   winnerSent = false;
 }
 
 void quizAnimation(int delayTime) {
   for (int i = 0; i < 25; i++) {
-    digitalWrite(LEFT_BUTTON_LIGHT, i%2 == 0 ? HIGH : LOW);
-    digitalWrite(RIGHT_BUTTON_LIGHT, i%2 == 0 ? HIGH : LOW);
+    digitalWrite(LEFT_LIGHT, i%2 == 0 ? HIGH : LOW);
+    digitalWrite(RIGHT_LIGHT, i%2 == 0 ? HIGH : LOW);
     delay(delayTime);
   }
   // Restore initial state
-  digitalWrite(LEFT_BUTTON_LIGHT, leftLEDStatus);
-  digitalWrite(RIGHT_BUTTON_LIGHT, rightLEDStatus);
+  digitalWrite(LEFT_LIGHT, leftLEDStatus);
+  digitalWrite(RIGHT_LIGHT, rightLEDStatus);
 }
 
 void setupQuiz() {
-  pinMode(LEFT_BUTTON_SWITCH, INPUT);
-  pinMode(RIGHT_BUTTON_SWITCH, INPUT);
+  pinMode(LEFT_LIGHT, OUTPUT);
+  pinMode(RIGHT_LIGHT, OUTPUT);
 
-  pinMode(LEFT_BUTTON_LIGHT, OUTPUT);
-  pinMode(RIGHT_BUTTON_LIGHT, OUTPUT);
-
-  quizAnimation(100);
   quizReset();
 }
 
+bool quizCheckPressed(ezButton button, const char* buttonName) {
+  bool pressed = button.isReleased();
+  if (pressed) {
+    sendMQTTMessage(MQTT_TOPIC_PRESS, buttonName, false);
+  }
+  return pressed;
+}
+
 void loopQuiz() {
-  if (winnerSent) {
+  // If not connected to broker, flash the LED
+  if (!mqttClient.connected()) {
+    digitalWrite(LEFT_LIGHT, millis() % 1000 < 500 ? HIGH : LOW);
+    digitalWrite(RIGHT_LIGHT, millis() % 1000 < 500 ? HIGH : LOW);
     return;
   }
 
-  int leftSwitchStatus = digitalRead(LEFT_BUTTON_SWITCH);
-  int rightSwitchStatus = digitalRead(RIGHT_BUTTON_SWITCH);
+  leftSwitch.loop();
+  rightSwitch.loop();
 
-  if (leftSwitchStatus == LOW && rightSwitchStatus == LOW) {
-    return;
+  bool leftSwitchPressed = quizCheckPressed(leftSwitch, "L");
+  bool rightSwitchPressed = quizCheckPressed(rightSwitch, "R");
+
+  if (!winnerSent) {
+    // Reset the lights
+    digitalWrite(LEFT_LIGHT, LOW);
+    digitalWrite(RIGHT_LIGHT, LOW);
+
+    if (leftSwitchPressed || rightSwitchPressed) {
+      winnerSent = true;
+      winner = leftSwitchPressed ? LEFT_LIGHT : RIGHT_LIGHT;
+
+      quizSwitchLED(winner, HIGH);
+      sendMQTTMessage(MQTT_TOPIC_QUIZ, leftSwitchPressed ? "L" : "R", false);
+    }
   }
-
-  if (leftSwitchStatus == HIGH && rightSwitchStatus == HIGH) {
-    logError("BOTH_BUTTONS_PRESSED");
-    return;
-  }
-
-  winnerSent = true;
-  
-  if (leftSwitchStatus == HIGH) {
-    winner = LEFT_BUTTON_LIGHT;
-  } else if (rightSwitchStatus == HIGH) {
-    winner = RIGHT_BUTTON_LIGHT;
-  }
-
-  quizSwitchLED(winner, HIGH);
-  sendMQTTMessage(MQTT_TOPIC_QUIZ, winner == LEFT_BUTTON_LIGHT ? "L" : "R", false);
 }
 
 void handleQuiz(DynamicJsonDocument json) {
@@ -214,7 +221,10 @@ void setupGeneric() {
   }
 
   pinMode(LED_BUILTIN, OUTPUT);
-  digitalWrite(LED_BUILTIN, LOW);
+  digitalWrite(LED_BUILTIN, HIGH);
+
+  digitalWrite(LEFT_LIGHT, HIGH);
+  digitalWrite(RIGHT_LIGHT, HIGH);
 
   loadConfig();
 
@@ -225,6 +235,7 @@ void setupGeneric() {
   snprintf(MQTT_TOPIC_DEBUG, 80, "%s/debug", BOARD_ID);
 
   snprintf(MQTT_TOPIC_QUIZ, 80, "%s/quiz", BOARD_ID);
+  snprintf(MQTT_TOPIC_PRESS, 80, "%s/press", BOARD_ID);
 }
 
 void handleRestart(DynamicJsonDocument json) {
@@ -252,9 +263,9 @@ void setupWifi() {
   wifiManager.addParameter(&wifi_param_mqtt_password);
 
   if (WiFi.status() == WL_CONNECTED || wifiManager.autoConnect(BOARD_ID)) {
+    digitalWrite(LED_BUILTIN, HIGH);
     WiFi.mode(WIFI_STA);
     wifiManager.startWebPortal();
-    digitalWrite(LED_BUILTIN, HIGH);
   }
 }
 
@@ -327,9 +338,12 @@ void setupMQTT() {
 
 void loopMQTT() {
   if (mqttClient.connected()) {
+    digitalWrite(LED_BUILTIN, LOW);
     mqttClient.loop();
     return;
   }
+
+  digitalWrite(LED_BUILTIN, HIGH);
 
   if (millis() < mqttLastTime + MQTT_POLLING_TIMEOUT) {
     return;

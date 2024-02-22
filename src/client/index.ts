@@ -32,9 +32,9 @@ function sendMessageToButtons(method: string, data: Record<string, any> = {}) {
     client.publish(
         `${NAMESPACE}/callback`,
         JSON.stringify({
+            ...data,
             command: "quiz",
             method,
-            data,
         }),
     );
 }
@@ -46,14 +46,18 @@ client.on("connect", () => {
 
     client.subscribe(`${NAMESPACE}/availability`);
     client.subscribe(`${NAMESPACE}/quiz`);
+    client.subscribe(`${NAMESPACE}/press`);
 
     // Ping the buttons to check their availability
-    sendMessageToButtons("availability");
+    client.publish(
+        `${NAMESPACE}/callback`,
+        JSON.stringify({
+            command: "availability",
+        }),
+    );
 });
 
 function whenClientButtonPressed(button: "L" | "R") {
-    $buzzer.currentTime = 0;
-    $buzzer.play();
     $buttons[button].classList.add("active");
 }
 
@@ -83,6 +87,11 @@ client.on("message", (topic, message) => {
             }
             break;
 
+        case `${NAMESPACE}/press`:
+            $buzzer.currentTime = 0;
+            $buzzer.play();
+            break;
+
         default:
             console.log("Unknown topic:", topic);
             break;
@@ -95,8 +104,8 @@ client.on("error", error => {
     console.error("Error occurred:", error);
 });
 
-document.querySelector("#reset").addEventListener("click", onReset);
+document.querySelector("#reset")!.addEventListener("click", onReset);
 
-document.querySelector("#animate").addEventListener("click", () => {
-    sendMessageToButtons("animate");
+document.querySelector("#animate")!.addEventListener("click", () => {
+    sendMessageToButtons("animation");
 });
