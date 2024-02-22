@@ -16,3 +16,6 @@ Thumbs.db
 # Ignore built ts files
 dist/**/*
 .pio/
+public/bundle.js
+public/bundle.js.map
+public/bundle.LICENSE.txt
