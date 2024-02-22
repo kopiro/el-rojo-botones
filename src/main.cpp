@@ -12,6 +12,7 @@ char mqtt_password[64] = "";
 
 #define AVAILABILITY_ONLINE "online"
 #define AVAILABILITY_OFFLINE "offline"
+#define MQTT_POLLING_TIMEOUT 5000
 
 char MQTT_TOPIC_AVAILABILITY[80];
 char MQTT_TOPIC_CALLBACK[80];
@@ -50,6 +51,106 @@ void logError(const char *msg) {
   Serial.println(msg);
   sendMQTTMessage(MQTT_TOPIC_DEBUG, msg, false);
 }
+
+#define LEFT_BUTTON_SWITCH 5
+#define RIGHT_BUTTON_SWITCH 4
+
+#define LEFT_BUTTON_LIGHT 14
+#define RIGHT_BUTTON_LIGHT 16
+
+unsigned short leftLEDStatus = 0;
+unsigned short rightLEDStatus = 0;
+
+unsigned short winner = 0;
+bool winnerSent = false;
+
+void quizSwitchLED(int pin, int value) {
+  if (pin == LEFT_BUTTON_LIGHT) {
+    leftLEDStatus = value;
+  } else {
+    rightLEDStatus = value;
+  }
+  digitalWrite(pin, value);
+}
+
+void quizReset() {
+  quizSwitchLED(LEFT_BUTTON_LIGHT, LOW);
+  quizSwitchLED(RIGHT_BUTTON_LIGHT, LOW);
+  winner = 0;
+  winnerSent = false;
+}
+
+void quizAnimation(int delayTime) {
+  for (int i = 0; i < 25; i++) {
+    digitalWrite(LEFT_BUTTON_LIGHT, i%2 == 0 ? HIGH : LOW);
+    digitalWrite(RIGHT_BUTTON_LIGHT, i%2 == 0 ? HIGH : LOW);
+    delay(delayTime);
+  }
+  // Restore initial state
+  digitalWrite(LEFT_BUTTON_LIGHT, leftLEDStatus);
+  digitalWrite(RIGHT_BUTTON_LIGHT, rightLEDStatus);
+}
+
+void setupQuiz() {
+  pinMode(LEFT_BUTTON_SWITCH, INPUT);
+  pinMode(RIGHT_BUTTON_SWITCH, INPUT);
+
+  pinMode(LEFT_BUTTON_LIGHT, OUTPUT);
+  pinMode(RIGHT_BUTTON_LIGHT, OUTPUT);
+
+  quizAnimation(100);
+  quizReset();
+}
+
+void loopQuiz() {
+  if (winnerSent) {
+    return;
+  }
+
+  int leftSwitchStatus = digitalRead(LEFT_BUTTON_SWITCH);
+  int rightSwitchStatus = digitalRead(RIGHT_BUTTON_SWITCH);
+
+  if (leftSwitchStatus == LOW && rightSwitchStatus == LOW) {
+    return;
+  }
+
+  if (leftSwitchStatus == HIGH && rightSwitchStatus == HIGH) {
+    logError("BOTH_BUTTONS_PRESSED");
+    return;
+  }
+
+  winnerSent = true;
+  
+  if (leftSwitchStatus == HIGH) {
+    winner = LEFT_BUTTON_LIGHT;
+  } else if (rightSwitchStatus == HIGH) {
+    winner = RIGHT_BUTTON_LIGHT;
+  }
+
+  quizSwitchLED(winner, HIGH);
+  sendMQTTMessage(MQTT_TOPIC_QUIZ, winner == LEFT_BUTTON_LIGHT ? "L" : "R", false);
+}
+
+void handleQuiz(DynamicJsonDocument json) {
+  String method = json["method"].as<String>();
+
+  if (method == "reset") {
+    quizReset();
+    return;
+  }
+
+  if (method == "animation") {
+    int delayTime = json["delay"].as<int>();
+    if (!delayTime) {
+      delayTime = 100;
+    }
+    quizAnimation(delayTime);
+    return;
+  }
+
+  logError("INVALID_QUIZ_METHOD");
+}
+
 
 void saveConfig() {
   DynamicJsonDocument json(512);
@@ -176,6 +277,43 @@ void mqttConnect() {
   }
 }
 
+void mqttCallback(char *topic, byte *payload, unsigned int length) {
+  char payloadText[length + 1];
+  snprintf(payloadText, length + 1, "%s", payload);
+
+  Serial.printf("MQTT callback with topic <%s> and payload <%s>\n", topic,
+                payloadText);
+  // sendMQTTMessage(MQTT_TOPIC_DEBUG, payloadText, false);
+
+  DynamicJsonDocument commandJson(256);
+  DeserializationError err = deserializeJson(commandJson, payloadText);
+
+  if (err) {
+    logError("INVALID_JSON");
+    return;
+  }
+
+  String command = commandJson["command"].as<String>();
+
+  if (command == "availability") {
+    sendMQTTMessage(MQTT_TOPIC_AVAILABILITY, AVAILABILITY_ONLINE, true);
+    return;
+  }
+
+  if (command == "restart") {
+    handleRestart(commandJson);
+    return;
+  }
+
+  if (command == "quiz") {
+    handleQuiz(commandJson);
+    return;
+  }
+
+  Serial.printf("Unknown callback command: %s", command.c_str());
+  logError("MQTT_INVALID_COMMAND");
+}
+
 void setupMQTT() {
   mqttClient.setClient(wifiClient);
 
@@ -225,139 +363,6 @@ void loopMDNS() {
   MDNS.update(); 
 }
 
-#define LEFT_BUTTON_SWITCH 5
-#define RIGHT_BUTTON_SWITCH 4
-
-#define LEFT_BUTTON_LIGHT 14
-#define RIGHT_BUTTON_LIGHT 16
-
-unsigned short leftLEDStatus = 0;
-unsigned short rightLEDStatus = 0;
-
-unsigned short winner = 0;
-bool winnerSent = false;
-
-void quizSwitchLED(int pin, int value) {
-  if (pin == LEFT_BUTTON_LIGHT) {
-    leftLEDStatus = value;
-  } else {
-    rightLEDStatus = value;
-  }
-  digitalWrite(pin, value);
-}
-
-void quizReset() {
-  quizSwitchLED(LEFT_BUTTON_LIGHT, LOW);
-  quizSwitchLED(RIGHT_BUTTON_LIGHT, LOW);
-  winner = 0;
-  winnerSent = false;
-}
-
-void quizAnimation(int delayTime) {
-  for (int i = 0; i < 25; i++) {
-    digitalWrite(LEFT_BUTTON_LIGHT, i%2 == 0 ? HIGH : LOW);
-    digitalWrite(RIGHT_BUTTON_LIGHT, i%2 == 0 ? HIGH : LOW);
-    delay(delayTime);
-  }
-  // Restore initial state
-  digitalWrite(LEFT_BUTTON_LIGHT, leftLEDStatus);
-  digitalWrite(RIGHT_BUTTON_LIGHT, rightLEDStatus);
-}
-
-void setupQuiz() {
-  pinMode(LEFT_BUTTON_SWITCH, INPUT);
-  pinMode(RIGHT_BUTTON_SWITCH, INPUT);
-
-  pinMode(LEFT_BUTTON_LIGHT, OUTPUT);
-  pinMode(RIGHT_BUTTON_LIGHT, OUTPUT);
-
-  quizAnimation(100);
-  quizReset();
-}
-
-void loopQuiz() {
-  if (winnerSent) {
-    return;
-  }
-
-  int leftSwitchStatus = digitalRead(LEFT_BUTTON_SWITCH);
-  int rightSwitchStatus = digitalRead(RIGHT_BUTTON_SWITCH);
-
-  if (leftSwitchStatus == LOW && rightSwitchStatus == LOW) {
-    return;
-  }
-
-  winnerSent = true;
-  
-  if (leftSwitchStatus == HIGH) {
-    winner = LEFT_BUTTON_LIGHT;
-  } else if (rightSwitchStatus == HIGH) {
-    winner = RIGHT_BUTTON_LIGHT;
-  } else {
-    logError("INVALID_WINNER");
-    return;
-  }
-
-  quizSwitchLED(winner, HIGH);
-  sendMQTTMessage(MQTT_TOPIC_QUIZ, winner == LEFT_BUTTON_LIGHT ? "L" : "R", false);
-}
-
-void handleQuiz(DynamicJsonDocument json) {
-  String method = json["method"].as<String>();
-
-  if (method == "reset") {
-    quizReset();
-    return;
-  }
-
-  if (method == "animation") {
-    int delayTime = json["delay"].as<int>();
-    if (!delayTime) {
-      delayTime = 100;
-    }
-    quizAnimation(delayTime);
-    return;
-  }
-
-  logError("INVALID_QUIZ_METHOD");
-}
-
-void mqttCallback(char *topic, byte *payload, unsigned int length) {
-  char payloadText[length + 1];
-  snprintf(payloadText, length + 1, "%s", payload);
-
-  Serial.printf("MQTT callback with topic <%s> and payload <%s>\n", topic,
-                payloadText);
-  // sendMQTTMessage(MQTT_TOPIC_DEBUG, payloadText, false);
-
-  DynamicJsonDocument commandJson(256);
-  DeserializationError err = deserializeJson(commandJson, payloadText);
-
-  if (err) {
-    logError("INVALID_JSON");
-    return;
-  }
-
-  String command = commandJson["command"].as<String>();
-
-  if (command == "availability") {
-    sendMQTTMessage(MQTT_TOPIC_AVAILABILITY, AVAILABILITY_ONLINE, true);
-    return;
-  }
-
-  if (command == "restart") {
-    handleRestart(commandJson);
-    return;
-  }
-
-  if (command == "quiz") {
-    handleQuiz(commandJson);
-    return;
-  }
-
-  Serial.printf("Unknown callback command: %s", command.c_str());
-  logError("MQTT_INVALID_COMMAND");
-}
 
 
 void setup() {

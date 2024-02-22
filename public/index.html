@@ -6,8 +6,27 @@
     </head>
     <body>
         <h1>El <span>rojo</span> botones</h1>
+
+        <div id="debug">
+            <div>
+                Connection to buttons:
+                <span id="connection-status-buttons">Unknown</span>
+            </div>
+            <div>
+                Connection to server:
+                <span id="connection-status-server">Unknown</span>
+            </div>
+        </div>
+
+        <div id="buttons">
+            <div class="button" id="left-button"></div>
+            <div class="button" id="right-button"></div>
+        </div>
         <button id="reset">Reset</button>
         <button id="animate">Animate</button>
+
+        <audio id="buzzer" src="buzzer.wav"></audio>
+
         <script src="bundle.js"></script>
     </body>
 </html>

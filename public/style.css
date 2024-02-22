@@ -10,3 +10,31 @@ a {
 h1 span {
     color: red;
 }
+
+.success {
+    color: green;
+}
+
+.error {
+    color: red;
+}
+
+#buttons {
+    display: flex;
+    justify-content: space-around;
+    margin: 50px 0;
+    flex-direction: row;
+    gap: 16px;
+}
+
+.button {
+    border-radius: 50%;
+    background-color: rgb(147, 7, 7);
+    width: 100px;
+    height: 100px;
+    border: 5px solid black;
+}
+
+.button.active {
+    background-color: red;
+}
