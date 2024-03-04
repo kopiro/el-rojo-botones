@@ -1,5 +1,7 @@
 body {
     padding: 50px;
+    background-color: black;
+    color: #fff;
     font: 14px "Lucida Grande", Helvetica, Arial, sans-serif;
 }
 
@@ -27,14 +29,37 @@ h1 span {
     gap: 16px;
 }
 
+#sentence {
+    display: block;
+    margin-top: 20px;
+    white-space: wrap;
+}
+
 .button {
     border-radius: 50%;
     background-color: rgb(147, 7, 7);
     width: 100px;
     height: 100px;
     border: 5px solid black;
+    color: #fff;
+    text-align: center;
+    line-height: 100px;
+    font-size: 50px;
 }
 
-.button.active {
+.button.success {
+    background-color: green;
+}
+
+.button.late {
+    opacity: 0.5;
+}
+
+.button.wrong {
     background-color: red;
+    opacity: 0.5;
+}
+
+.button.other_is_wrong {
+    background-color: green;
 }
